@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+dist
+coverage
+*.log
+.npm
+.cache
+tmp
+temp
+.DS_Store
+assets/audio/*
+!assets/audio/README.md

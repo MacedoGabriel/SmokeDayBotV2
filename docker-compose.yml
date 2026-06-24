@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    working_dir: /app
+    command: npm run dev
+    cpus: "1.0"
+    mem_limit: 768m
+
+volumes:
+  node_modules:
