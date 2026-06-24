@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const ytDlpBinary = process.env.YT_DLP_BIN?.trim() || "yt-dlp";
-const ytDlpCookiesFile = process.env.YT_DLP_COOKIES_FILE?.trim();
 const youtubeVideoAudioFormat = "bestaudio[acodec=opus][ext=webm]/bestaudio";
 const youtubeLiveAudioFormat = "bestaudio/best";
 const resolveTimeoutMs = 45_000;
@@ -69,7 +68,13 @@ function readYtDlpError(error: unknown): string {
 }
 
 function buildYtDlpAuthArgs(): string[] {
+  const ytDlpCookiesFile = getYtDlpCookiesFile();
+
   return ytDlpCookiesFile ? ["--cookies", ytDlpCookiesFile] : [];
+}
+
+function getYtDlpCookiesFile(): string {
+  return process.env.YT_DLP_COOKIES_FILE?.trim() ?? "";
 }
 
 function isYtDlpAuthChallenge(message: string): boolean {
@@ -168,6 +173,7 @@ export async function resolveYouTubeAudio(
     };
   } catch (error) {
     const ytDlpError = readYtDlpError(error);
+    const ytDlpCookiesFile = getYtDlpCookiesFile();
 
     if (isYtDlpAuthChallenge(ytDlpError) && !ytDlpCookiesFile) {
       throw new Error(
