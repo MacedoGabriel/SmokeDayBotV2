@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const ytDlpBinary = process.env.YT_DLP_BIN?.trim() || "yt-dlp";
+const ytDlpCookiesFile = process.env.YT_DLP_COOKIES_FILE?.trim();
 const youtubeVideoAudioFormat = "bestaudio[acodec=opus][ext=webm]/bestaudio";
 const youtubeLiveAudioFormat = "bestaudio/best";
 const resolveTimeoutMs = 45_000;
@@ -67,6 +68,21 @@ function readYtDlpError(error: unknown): string {
   return String(error);
 }
 
+function buildYtDlpAuthArgs(): string[] {
+  return ytDlpCookiesFile ? ["--cookies", ytDlpCookiesFile] : [];
+}
+
+function isYtDlpAuthChallenge(message: string): boolean {
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    normalizedMessage.includes("sign in to confirm") ||
+    normalizedMessage.includes("not a bot") ||
+    normalizedMessage.includes("--cookies-from-browser") ||
+    normalizedMessage.includes("--cookies")
+  );
+}
+
 export function isYouTubeUrl(value: string): boolean {
   return parseYouTubeUrl(value) !== undefined;
 }
@@ -104,6 +120,7 @@ export async function resolveYouTubeAudio(
         "node",
         "--no-playlist",
         "--no-warnings",
+        ...buildYtDlpAuthArgs(),
         "-f",
         getAudioFormat(mode),
         "--print",
@@ -150,6 +167,20 @@ export async function resolveYouTubeAudio(
       mode,
     };
   } catch (error) {
-    throw new Error(`Falha ao resolver audio do YouTube: ${readYtDlpError(error)}`);
+    const ytDlpError = readYtDlpError(error);
+
+    if (isYtDlpAuthChallenge(ytDlpError) && !ytDlpCookiesFile) {
+      throw new Error(
+        `Falha ao resolver audio do YouTube: o YouTube pediu autenticacao/cookies neste servidor. Configure YT_DLP_COOKIES_FILE no .env e reinicie o bot. Detalhes: ${ytDlpError}`,
+      );
+    }
+
+    if (isYtDlpAuthChallenge(ytDlpError)) {
+      throw new Error(
+        `Falha ao resolver audio do YouTube: os cookies configurados em YT_DLP_COOKIES_FILE nao foram aceitos pelo YouTube. Gere um arquivo novo e reinicie o bot. Detalhes: ${ytDlpError}`,
+      );
+    }
+
+    throw new Error(`Falha ao resolver audio do YouTube: ${ytDlpError}`);
   }
 }

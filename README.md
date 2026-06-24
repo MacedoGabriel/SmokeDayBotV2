@@ -84,6 +84,9 @@ CLIENT_ID=application_id
 
 COMMAND_DEPLOY_SCOPE=guild
 GUILD_IDS=id_servidor_teste,id_servidor_principal
+
+# Opcional: arquivo cookies.txt para quando o YouTube bloquear o IP do servidor.
+YT_DLP_COOKIES_FILE=
 ```
 
 Durante desenvolvimento, use:
@@ -103,6 +106,8 @@ COMMAND_DEPLOY_SCOPE=global
 Use global apenas quando os comandos estiverem estaveis. Comandos globais podem demorar mais para aparecer ou atualizar no Discord.
 
 Nunca commite o arquivo `.env`.
+
+Tambem nunca commite arquivos de cookies. Eles podem permitir acesso a uma sessao da conta usada no YouTube.
 
 ## Rodando em desenvolvimento
 
@@ -228,6 +233,31 @@ docker compose exec bot yt-dlp --js-runtimes node -f "bestaudio[acodec=opus][ext
 
 Se o segundo comando retornar uma URL `googlevideo.com`, o yt-dlp conseguiu resolver o stream.
 
+### Cookies do YouTube em servidores cloud
+
+Em VPS/cloud, principalmente com IP compartilhado ou barato, o YouTube pode bloquear o `yt-dlp` com:
+
+```txt
+Sign in to confirm you're not a bot
+```
+
+Nesse caso, gere um arquivo `cookies.txt` em formato Netscape/Mozilla, coloque-o fora do repositorio e configure:
+
+```env
+YT_DLP_COOKIES_FILE=/caminho/privado/youtube-cookies.txt
+```
+
+Depois reinicie o bot. No deploy sem Docker da Oracle, o guia recomendado fica em:
+
+```txt
+docs/oracle-ubuntu-20.04-deploy.md
+```
+
+Referencia do yt-dlp:
+
+- https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
+- https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies
+
 ## YouTube Live
 
 Uso:
@@ -351,6 +381,8 @@ O YouTube muda com frequencia. Rebuildar a imagem baixa uma versao nova do yt-dl
 docker compose build --no-cache
 docker compose up -d --force-recreate
 ```
+
+Se o erro for `Sign in to confirm you're not a bot`, atualizar o `yt-dlp` pode nao ser suficiente. Configure `YT_DLP_COOKIES_FILE` com um arquivo de cookies privado.
 
 ## Producao
 

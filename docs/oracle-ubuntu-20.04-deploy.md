@@ -13,6 +13,7 @@ O servidor precisa de:
 - FFmpeg
 - yt-dlp
 - arquivo `.env` fora do Git
+- cookies opcionais do YouTube fora do Git
 - servico `systemd`
 - swap de 1 GB ou 2 GB
 
@@ -82,7 +83,7 @@ sudo adduser --system --group --home /opt/smokedaybot smokedaybot
 Depois de subir o repositorio no GitHub:
 
 ```bash
-sudo git clone https://github.com/SEU_USUARIO/SmokeDayBot.git /opt/smokedaybot/app
+sudo git clone https://github.com/MacedoGabriel/SmokeDayBotV2.git /opt/smokedaybot/app
 sudo chown -R smokedaybot:smokedaybot /opt/smokedaybot
 ```
 
@@ -102,6 +103,9 @@ DISCORD_TOKEN=token_do_bot
 CLIENT_ID=application_id
 COMMAND_DEPLOY_SCOPE=guild
 GUILD_IDS=id_servidor_teste,id_servidor_principal
+
+# Opcional, necessario quando o YouTube bloqueia o IP da VPS.
+YT_DLP_COOKIES_FILE=
 ```
 
 Proteja o arquivo:
@@ -110,6 +114,74 @@ Proteja o arquivo:
 sudo chmod 600 /opt/smokedaybot/app/.env
 sudo chown smokedaybot:smokedaybot /opt/smokedaybot/app/.env
 ```
+
+### Cookies opcionais para YouTube
+
+Se o log mostrar `Sign in to confirm you're not a bot`, o YouTube bloqueou a resolucao anonima naquele IP. Em servidores cloud isso pode acontecer mesmo com pouco uso.
+
+O `yt-dlp` recomenda passar cookies quando um site exige login/CAPTCHA. Para YouTube, use cookies apenas quando necessario, de preferencia com uma conta separada, porque uma conta usada com yt-dlp pode ser limitada ou banida.
+
+Forma recomendada para gerar o arquivo:
+
+1. Abra uma janela anonima/privada no navegador local.
+2. Entre no YouTube com uma conta separada.
+3. Na mesma aba, acesse `https://www.youtube.com/robots.txt`.
+4. Exporte apenas cookies de `youtube.com` em formato Netscape/Mozilla usando uma extensao confiavel de cookies.
+5. Feche a janela anonima para essa sessao nao ficar sendo rotacionada pelo navegador.
+6. Salve como `youtube-cookies.txt`.
+
+Alternativa rapida, menos isolada, usando o proprio `yt-dlp` no computador local:
+
+```bash
+yt-dlp --cookies-from-browser chrome --cookies youtube-cookies.txt
+```
+
+Essa alternativa pode exportar cookies de todos os sites do navegador, entao trate o arquivo como segredo.
+
+Copie o arquivo para a VM:
+
+```powershell
+scp .\youtube-cookies.txt ubuntu@IP_DA_VM:/tmp/youtube-cookies.txt
+```
+
+No servidor:
+
+```bash
+sudo mkdir -p /opt/smokedaybot/secrets
+sudo mv /tmp/youtube-cookies.txt /opt/smokedaybot/secrets/youtube-cookies.txt
+sudo chown -R smokedaybot:smokedaybot /opt/smokedaybot/secrets
+sudo chmod 700 /opt/smokedaybot/secrets
+sudo chmod 600 /opt/smokedaybot/secrets/youtube-cookies.txt
+```
+
+Edite o `.env`:
+
+```bash
+sudo nano /opt/smokedaybot/app/.env
+```
+
+Adicione:
+
+```env
+YT_DLP_COOKIES_FILE=/opt/smokedaybot/secrets/youtube-cookies.txt
+```
+
+Teste antes de reiniciar o bot:
+
+```bash
+sudo -u smokedaybot yt-dlp --js-runtimes node --cookies /opt/smokedaybot/secrets/youtube-cookies.txt --get-title "URL_DO_YOUTUBE"
+```
+
+Se o titulo aparecer, reinicie:
+
+```bash
+sudo systemctl restart smokedaybot
+```
+
+Referencias:
+
+- https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
+- https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies
 
 ## 8. Instalar dependencias e buildar
 
