@@ -12,6 +12,7 @@ import {
 } from "discord.js";
 
 const voiceConnectionTimeoutMs = 15_000;
+const monitoredConnections = new WeakSet<VoiceConnection>();
 
 type VoiceChannelResult =
   | {
@@ -80,6 +81,7 @@ export async function connectToVoiceChannel(
     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
     selfDeaf: true,
   });
+  monitorVoiceConnection(connection, voiceChannel.guild.id);
 
   try {
     await entersState(
@@ -93,4 +95,25 @@ export async function connectToVoiceChannel(
   }
 
   return connection;
+}
+
+function monitorVoiceConnection(
+  connection: VoiceConnection,
+  guildId: string,
+): void {
+  if (monitoredConnections.has(connection)) {
+    return;
+  }
+
+  monitoredConnections.add(connection);
+
+  connection.on("stateChange", (oldState, newState) => {
+    console.log(
+      `Voice connection state for guild ${guildId}: ${oldState.status} -> ${newState.status}`,
+    );
+  });
+
+  connection.on("error", (error) => {
+    console.error(`Voice connection error for guild ${guildId}:`, error);
+  });
 }

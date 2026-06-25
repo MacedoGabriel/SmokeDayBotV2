@@ -27,6 +27,7 @@ export type YouTubeAudio = {
   extension: string;
   audioCodec: string;
   isLive: boolean;
+  durationSeconds?: number;
   mode: YouTubeAudioMode;
 };
 
@@ -107,6 +108,18 @@ function parseYtDlpBoolean(value: string | undefined): boolean {
   return value?.toLowerCase() === "true";
 }
 
+function parseYtDlpNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) && numberValue > 0
+    ? numberValue
+    : undefined;
+}
+
 export async function resolveYouTubeAudio(
   value: string,
   mode: YouTubeAudioMode = "video",
@@ -138,6 +151,8 @@ export async function resolveYouTubeAudio(
         "acodec",
         "--print",
         "is_live",
+        "--print",
+        "duration",
         pageUrl,
       ],
       {
@@ -156,7 +171,7 @@ export async function resolveYouTubeAudio(
       .map((line) => line.trim())
       .filter(Boolean);
 
-    const [title, streamUrl, extension, audioCodec, isLive] = lines;
+    const [title, streamUrl, extension, audioCodec, isLive, duration] = lines;
 
     if (!title || !streamUrl?.startsWith("http")) {
       throw new Error("Nao consegui obter o stream de audio do YouTube.");
@@ -169,6 +184,7 @@ export async function resolveYouTubeAudio(
       extension: extension || "unknown",
       audioCodec: audioCodec || "unknown",
       isLive: parseYtDlpBoolean(isLive),
+      durationSeconds: parseYtDlpNumber(duration),
       mode,
     };
   } catch (error) {

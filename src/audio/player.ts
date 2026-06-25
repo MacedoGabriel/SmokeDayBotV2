@@ -12,6 +12,7 @@ export type AudioResourceMetadata = {
   name: string;
   path: string;
   source: "local" | "youtube" | "live";
+  durationSeconds?: number;
 };
 
 export class YouTubeStreamOpenError extends Error {
@@ -40,6 +41,7 @@ export async function createYouTubeAudioResource(
     name: audio.title,
     path: audio.pageUrl,
     source: audio.mode === "live" ? "live" : "youtube",
+    durationSeconds: audio.durationSeconds,
   };
 
   if (isWebmOpusAudio(audio)) {

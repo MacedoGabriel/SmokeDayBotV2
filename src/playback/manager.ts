@@ -3,12 +3,14 @@ import {
   createAudioPlayer,
   NoSubscriberBehavior,
   type AudioPlayer,
+  type AudioPlayerState,
   type VoiceConnection,
 } from "@discordjs/voice";
 import { randomUUID } from "node:crypto";
 
 import type { LocalAudioFile } from "../audio/local-audio.js";
 import {
+  type AudioResourceMetadata,
   createLocalAudioResource,
   createYouTubeAudioResource,
   YouTubeStreamOpenError,
@@ -20,6 +22,40 @@ import {
 } from "../youtube/youtube-audio.js";
 
 const maxPlayAttempts = 2;
+const maxUnexpectedIdleRetries = 1;
+const unexpectedIdleMinDurationMs = 60_000;
+const unexpectedIdlePlaybackLimitMs = 30_000;
+
+type PlaybackStats = {
+  playbackDurationMs?: number;
+  expectedDurationMs?: number;
+};
+
+function getPlaybackStats(state: AudioPlayerState): PlaybackStats {
+  if (!("resource" in state)) {
+    return {};
+  }
+
+  const resource = state.resource as {
+    playbackDuration?: number;
+    metadata?: AudioResourceMetadata;
+  };
+
+  return {
+    playbackDurationMs: resource.playbackDuration,
+    expectedDurationMs: resource.metadata?.durationSeconds
+      ? resource.metadata.durationSeconds * 1000
+      : undefined,
+  };
+}
+
+function formatDurationMs(value: number | undefined): string {
+  if (value === undefined) {
+    return "unknown";
+  }
+
+  return `${Math.round(value / 1000)}s`;
+}
 
 export type PlaybackTrackSource = "local" | "youtube" | "live";
 
@@ -64,6 +100,7 @@ export class PlaybackManager {
   private connection?: VoiceConnection;
   private currentTrack?: PlaybackTrack;
   private readonly queue: PlaybackTrack[] = [];
+  private readonly unexpectedIdleRetries = new Map<string, number>();
   private isAdvancing = false;
 
   constructor(private readonly guildId: string) {
@@ -73,15 +110,26 @@ export class PlaybackManager {
       },
     });
 
-    this.player.on(AudioPlayerStatus.Idle, () => {
+    this.player.on(AudioPlayerStatus.Idle, (oldState) => {
       const finishedTrack = this.currentTrack;
+      const stats = getPlaybackStats(oldState);
 
       if (finishedTrack) {
         console.log(
-          `Audio player idle for guild ${this.guildId}: ${finishedTrack.title}`,
+          `Audio player idle for guild ${this.guildId}: ${finishedTrack.title} ` +
+          `(played ${formatDurationMs(stats.playbackDurationMs)} of ${formatDurationMs(stats.expectedDurationMs)})`,
         );
       } else {
         console.log(`Audio player idle for guild ${this.guildId}`);
+      }
+
+      if (finishedTrack && this.shouldRetryUnexpectedIdle(finishedTrack, stats)) {
+        void this.retryTrackAfterUnexpectedIdle(finishedTrack, stats);
+        return;
+      }
+
+      if (finishedTrack) {
+        this.unexpectedIdleRetries.delete(finishedTrack.id);
       }
 
       this.currentTrack = undefined;
@@ -192,6 +240,10 @@ export class PlaybackManager {
   stop(clearQueue = true): boolean {
     const wasPlaying = this.isBusy();
 
+    if (this.currentTrack) {
+      this.unexpectedIdleRetries.delete(this.currentTrack.id);
+    }
+
     this.currentTrack = undefined;
 
     if (clearQueue) {
@@ -205,6 +257,7 @@ export class PlaybackManager {
 
   destroy(): void {
     this.clearQueue();
+    this.unexpectedIdleRetries.clear();
     this.stop(false);
 
     if (!this.connection) {
@@ -357,6 +410,76 @@ export class PlaybackManager {
     );
 
     return result.track;
+  }
+
+  private shouldRetryUnexpectedIdle(
+    track: PlaybackTrack,
+    stats: PlaybackStats,
+  ): boolean {
+    if (track.source !== "youtube" || !this.connection) {
+      return false;
+    }
+
+    if (
+      !stats.playbackDurationMs ||
+      !stats.expectedDurationMs ||
+      stats.expectedDurationMs < unexpectedIdleMinDurationMs
+    ) {
+      return false;
+    }
+
+    const retryCount = this.unexpectedIdleRetries.get(track.id) ?? 0;
+
+    if (retryCount >= maxUnexpectedIdleRetries) {
+      return false;
+    }
+
+    const earlyPlaybackLimitMs = Math.min(
+      unexpectedIdlePlaybackLimitMs,
+      stats.expectedDurationMs * 0.25,
+    );
+
+    return stats.playbackDurationMs < earlyPlaybackLimitMs;
+  }
+
+  private async retryTrackAfterUnexpectedIdle(
+    track: PlaybackTrack,
+    stats: PlaybackStats,
+  ): Promise<void> {
+    const retryCount = (this.unexpectedIdleRetries.get(track.id) ?? 0) + 1;
+    this.unexpectedIdleRetries.set(track.id, retryCount);
+
+    console.warn(
+      `YouTube stream ended early for guild ${this.guildId}: ${track.title} ` +
+      `(played ${formatDurationMs(stats.playbackDurationMs)} of ${formatDurationMs(stats.expectedDurationMs)}). ` +
+      `Refreshing stream (${retryCount}/${maxUnexpectedIdleRetries})...`,
+    );
+
+    this.currentTrack = undefined;
+    this.isAdvancing = true;
+
+    let shouldAdvanceQueue = false;
+
+    try {
+      const restartedTrack = await this.playTrack(track);
+      console.log(
+        `Restarted YouTube track for guild ${this.guildId}: ${restartedTrack.title}`,
+      );
+    } catch (error) {
+      console.error(
+        `Failed to restart early-ended YouTube track for guild ${this.guildId}:`,
+        error,
+      );
+      this.currentTrack = undefined;
+      this.unexpectedIdleRetries.delete(track.id);
+      shouldAdvanceQueue = true;
+    } finally {
+      this.isAdvancing = false;
+    }
+
+    if (shouldAdvanceQueue) {
+      void this.playNextFromQueue();
+    }
   }
 
   private async playNextFromQueue(): Promise<PlaybackTrack | undefined> {
