@@ -43,6 +43,8 @@ export function createLocalAudioResource(
 }
 
 function getFfmpegReconnectArgs(): string[] {
+  // Ubuntu 20.04 ships an older FFmpeg that does not support newer
+  // reconnect_on_* flags, so keep this list intentionally conservative.
   return [
     "-reconnect",
     "1",
@@ -50,10 +52,6 @@ function getFfmpegReconnectArgs(): string[] {
     "1",
     "-reconnect_delay_max",
     "5",
-    "-reconnect_on_network_error",
-    "1",
-    "-reconnect_on_http_error",
-    "4xx,5xx",
   ];
 }
 
